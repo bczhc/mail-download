@@ -1,0 +1,57 @@
+plugins {
+    id 'java'
+    id 'scala'
+}
+
+group 'pers.zhc'
+version '1.0'
+
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+
+dependencies {
+    // https://mvnrepository.com/artifact/com.sun.mail/javax.mail
+    implementation group: 'com.sun.mail', name: 'javax.mail', version: '1.6.2'
+    implementation 'com.github.bczhc:java-lib:18a858c167'
+    implementation 'com.github.bczhc:jni-java:3a74b3d640'
+    // https://mvnrepository.com/artifact/commons-codec/commons-codec
+    implementation group: 'commons-codec', name: 'commons-codec', version: '1.15'
+    // https://mvnrepository.com/artifact/org.json/json
+    implementation group: 'org.json', name: 'json', version: '20211205'
+    // https://mvnrepository.com/artifact/org.jetbrains/annotations
+    implementation group: 'org.jetbrains', name: 'annotations', version: '23.0.0'
+    // https://mvnrepository.com/artifact/com.google.code.gson/gson
+    implementation group: 'com.google.code.gson', name: 'gson', version: '2.8.9'
+    // https://mvnrepository.com/artifact/org.scala-lang/scala-library
+    implementation group: 'org.scala-lang', name: 'scala-library', version: '2.13.7'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+}
+
+jar {
+    manifest {
+        attributes "Main-Class": "demo.Demo"
+    }
+}
+
+task fatJar(type: Jar) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    
+    manifest.from jar.manifest
+    archiveClassifier.set "all"
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    with jar
+}
+
+
+test {
+    useJUnitPlatform()
+}

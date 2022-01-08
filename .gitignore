@@ -1,0 +1,4 @@
+/.gradle/
+/.idea/
+/build/
+/mail-auth.properties
