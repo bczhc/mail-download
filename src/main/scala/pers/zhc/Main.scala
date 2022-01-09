@@ -64,7 +64,7 @@ object Main {
     val debug = (false, 256)
     val iterator =
       if (debug._1) List(messages(debug._2))
-      else List.from(messages.slice(420, messages.length))
+      else List.from(messages.slice(0, messages.length))
     for (m <- iterator) {
       val message = m.asInstanceOf[IMAPMessage]
 
@@ -81,20 +81,25 @@ object Main {
       val messageId = Option(message.getMessageID)
       val messageNumber = message.getMessageNumber
 
-      val mailContent = getMailContent(message)
+      try {
+        val mailContent = getMailContent(message)
+        database.insert(
+          headersJSON,
+          subject,
+          sentTime,
+          receivedTime,
+          addresses,
+          size,
+          mimeData,
+          messageId,
+          messageNumber,
+          mailContent
+        )
 
-      database.insert(
-        headersJSON,
-        subject,
-        sentTime,
-        receivedTime,
-        addresses,
-        size,
-        mimeData,
-        messageId,
-        messageNumber,
-        mailContent
-      )
+      } catch {
+        case e: Exception =>
+          e.printStackTrace()
+      }
     }
 
     database.commit()
@@ -516,12 +521,17 @@ object Main {
       }
     }
 
+    val sender = {
+      val a = message.getSender.asInstanceOf[InternetAddress]
+      Address(Option(a.getPersonal), a.getAddress)
+    }
     val from = message.getFrom.map(resolveAddress)
     val to = handleNullableRecipients(message.getRecipients(RecipientType.TO))
     val cc = handleNullableRecipients(message.getRecipients(RecipientType.CC))
     val bcc = handleNullableRecipients(message.getRecipients(RecipientType.BCC))
 
     Addresses(
+      sender,
       from.toList,
       Addresses.Recipients(to.toList, cc.toList, bcc.toList)
     )

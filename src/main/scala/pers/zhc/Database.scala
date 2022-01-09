@@ -15,6 +15,7 @@ class Database(path: String) {
       |                 subject,
       |                 sent_time,
       |                 received_time,
+      |                 sender_addr,
       |                 from_addr,
       |                 to_addr,
       |                 cc_addr,
@@ -25,16 +26,16 @@ class Database(path: String) {
       |                 msg_num,
       |                 content_plain,
       |                 content_html)
-      |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""".stripMargin)
+      |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""".stripMargin)
 
   def init(): Unit = {
-    db.exec(
-      """CREATE TABLE IF NOT EXISTS mail
+    db.exec("""CREATE TABLE IF NOT EXISTS mail
         |(
         |    headers_json  TEXT NOT NULL,
         |    subject       TEXT,
         |    sent_time     INTEGER,
         |    received_time INTEGER,
+        |    sender_addr   TEXT NOT NULL,
         |    from_addr     TEXT NOT NULL,
         |    to_addr       TEXT NOT NULL,
         |    cc_addr       TEXT NOT NULL,
@@ -45,8 +46,7 @@ class Database(path: String) {
         |    msg_num       INTEGER,
         |    content_plain TEXT,
         |    content_html  TEXT
-        |)""".stripMargin
-    )
+        |)""".stripMargin)
   }
 
   def beginTransaction(): Unit = db.beginTransaction()
@@ -104,6 +104,7 @@ class Database(path: String) {
         subject.orNull,
         sentTime,
         receivedTime,
+        addresses.sender.address,
         fromAddrSeqString,
         toAddrSeqString,
         ccAddrSeqString,
