@@ -36,7 +36,7 @@ dependencies {
 
 jar {
     manifest {
-        attributes "Main-Class": "demo.Demo"
+        attributes "Main-Class": "pers.zhc.Main"
     }
 }
 
