@@ -21,7 +21,13 @@ import javax.mail.{Folder, Header, Message, Multipart, Part, Session}
 object Main {
   private type JMailAddress = javax.mail.Address
 
-  System.load("/usr/lib/x86_64-linux-gnu/libjni-lib.so")
+  System.load("/home/bczhc/code/jni/build/libjni-lib.so")
+
+  object TryAssertException extends Exception
+
+  def tryAssert(condition: Boolean): Unit = {
+    if (!condition) throw TryAssertException
+  }
 
   def main(args: Array[String]): Unit = {
     val authProperties = new Properties()
@@ -29,7 +35,10 @@ object Main {
     authProperties.load(is)
     is.close()
 
-    val database = new Database("/home/zhc/mail.db")
+    val databaseFile = new File("/home/bczhc/mail.db")
+    if (databaseFile.exists()) require(databaseFile.delete())
+    val database = new Database(databaseFile.getPath)
+
     database.beginTransaction()
 
     val props = new Properties
@@ -54,17 +63,17 @@ object Main {
 
     store.id(iam)
 
-    val inbox: Folder = store.getFolder("INBOX")
+    val inbox = store.getFolder("INBOX")
     inbox.open(Folder.READ_ONLY)
 
     val messageCount = inbox.getMessageCount
     System.out.println(messageCount)
     val messages = inbox.getMessages
 
-    val debug = (false, 256)
+    val debug = (true, 1239)
     val iterator =
-      if (debug._1) List(messages(debug._2))
-      else List.from(messages.slice(0, messages.length))
+      if (debug._1) List(messages(debug._2 - 1))
+      else List.from(messages.slice(662, messages.length))
     for (m <- iterator) {
       val message = m.asInstanceOf[IMAPMessage]
 
@@ -117,7 +126,7 @@ object Main {
   private def getCharsetFromMime(mime: String) = {
     val matcher = mimeCharsetPattern.matcher(mime)
     if (matcher.find) {
-      assert(matcher.groupCount() == 1)
+      tryAssert(matcher.groupCount() == 1)
       Some(matcher.group(1))
     } else None
   }
@@ -156,7 +165,7 @@ object Main {
     while ({
       matcher.find
     }) {
-      assert(matcher.groupCount == 3)
+      tryAssert(matcher.groupCount == 3)
       val charset = matcher.group(1)
       val encoding = matcher.group(2).toLowerCase.charAt(0)
       val encodedText = matcher.group(3)
@@ -244,7 +253,16 @@ object Main {
   private def readPlainText(message: IMAPMessage): String =
     readPlainTextAny(message)
 
-  private def readAlternative(multipart: Multipart): AlternativeContent = {
+  private class AlternativePossibleValue
+  private case object AlternativePossibleValue {
+    case class PlainHtml(html: String) extends AlternativePossibleValue
+    case class Alternative(alternative: AlternativeContent)
+        extends AlternativePossibleValue
+  }
+
+  private def readAlternative(
+      multipart: Multipart
+  ): AlternativePossibleValue = {
     val handleSingleAlternative = { multipart: Multipart =>
       var textPart: Option[IMAPBodyPart] = None
       var htmlPart: Option[IMAPBodyPart] = None
@@ -258,16 +276,23 @@ object Main {
           htmlPart = Some(part.asInstanceOf[IMAPBodyPart])
         }
       }
+      tryAssert(htmlPart.isDefined)
 
-      AlternativeContent(
-        readPlainText(textPart.get),
-        readPlainText(htmlPart.get)
-      )
+      if (textPart.isEmpty) {
+        AlternativePossibleValue.PlainHtml(readPlainText(htmlPart.get))
+      } else {
+        AlternativePossibleValue.Alternative(
+          AlternativeContent(
+            readPlainText(textPart.get),
+            readPlainText(htmlPart.get)
+          )
+        )
+      }
     }
 
-    def readRecursiveAlternative: Multipart => AlternativeContent = {
+    def readRecursiveAlternative: Multipart => AlternativePossibleValue = {
       multipart: Multipart =>
-        assert(multipart.getCount >= 1)
+        tryAssert(multipart.getCount >= 1)
         val part0 = multipart.getBodyPart(0)
         if (part0.isMimeType("multipart/alternative")) {
           readRecursiveAlternative(part0.getContent.asInstanceOf[Multipart])
@@ -275,6 +300,7 @@ object Main {
           handleSingleAlternative(multipart)
         }
     }
+
     readRecursiveAlternative(multipart)
   }
 
@@ -328,6 +354,7 @@ object Main {
 
   /**
     * read plain text or HTML content
+    *
     * @param bodyPart body part
     * @return
     */
@@ -343,12 +370,17 @@ object Main {
 
     } else if (bodyPart.isMimeType("multipart/alternative")) {
 
-      Text.Html(
-        HtmlContent.Alternative(
-          readAlternative(bodyPart.getContent.asInstanceOf[Multipart]),
-          None
-        )
-      )
+      readAlternative(bodyPart.getContent.asInstanceOf[Multipart]) match {
+        case AlternativePossibleValue.Alternative(alternative) =>
+          Text.Html(
+            HtmlContent.Alternative(
+              alternative,
+              None
+            )
+          )
+        case AlternativePossibleValue.PlainHtml(html) =>
+          Text.Html(HtmlContent.PlainHtml(html, None))
+      }
     } else if (bodyPart.isMimeType("multipart/related")) {
 
       val html = handleRelatedMimeMultipart(
@@ -371,31 +403,35 @@ object Main {
 
       MailContent.Normal(
         Text.Html(
-          HtmlContent.Alternative(
-            readAlternative(message.getContent.asInstanceOf[Multipart]),
-            None
-          )
+          readAlternative(message.getContent.asInstanceOf[Multipart]) match {
+            case AlternativePossibleValue.Alternative(alternative) =>
+              HtmlContent.Alternative(alternative, None)
+            case AlternativePossibleValue.PlainHtml(html) =>
+              HtmlContent.PlainHtml(html, None)
+          }
         ),
         None
       )
     } else if (message.isMimeType("multipart/mixed")) {
 
       val multipart = message.getContent.asInstanceOf[Multipart]
-      assert(multipart.getCount >= 1)
+      tryAssert(multipart.getCount >= 1)
       val part0 = multipart.getBodyPart(0).asInstanceOf[IMAPBodyPart]
       if (part0.isMimeType("multipart/alternative")) {
         // HTML with attachments
-        assert(multipart.getCount >= 2)
-        assert(multipart.getBodyPart(0).isMimeType("multipart/alternative"))
+        tryAssert(multipart.getCount >= 2)
+        tryAssert(multipart.getBodyPart(0).isMimeType("multipart/alternative"))
 
         MailContent.Normal(
           Text.Html(
-            HtmlContent.Alternative(
-              readAlternative(
-                multipart.getBodyPart(0).getContent.asInstanceOf[Multipart]
-              ),
-              None
-            )
+            readAlternative(
+              multipart.getBodyPart(0).getContent.asInstanceOf[Multipart]
+            ) match {
+              case AlternativePossibleValue.Alternative(alternative) =>
+                HtmlContent.Alternative(alternative, None)
+              case AlternativePossibleValue.PlainHtml(html) =>
+                HtmlContent.PlainHtml(html, None)
+            }
           ),
           Some(readAttachmentsFromMultipart(multipart = multipart))
         )
@@ -441,7 +477,7 @@ object Main {
 
       val multipart = message.getContent.asInstanceOf[Multipart]
       // according to RFC3462
-      assert(multipart.getCount == 2 || multipart.getCount == 3)
+      tryAssert(multipart.getCount == 2 || multipart.getCount == 3)
 
       MailContent.Report(
         readText(multipart.getBodyPart(0).asInstanceOf[IMAPBodyPart]), {
@@ -452,7 +488,7 @@ object Main {
               case Some(encoding) =>
                 new String(bytes, encoding)
               case None =>
-                assert(checkAllASCII(bytes))
+                tryAssert(checkAllASCII(bytes))
                 new String(bytes, StandardCharsets.US_ASCII)
             }
           } else {
@@ -545,7 +581,7 @@ object Main {
   }
 
   def handleRelatedMimeMultipart(relatedMultipart: Multipart): HtmlContent = {
-    assert(relatedMultipart.getCount >= 1)
+    tryAssert(relatedMultipart.getCount >= 1)
 
     val inlineAttachments = if (relatedMultipart.getCount > 1) {
       Some(
